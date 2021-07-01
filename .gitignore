@@ -11,3 +11,4 @@ flycheck_*
 /.tox/
 /.coverage
 
+/*.pdf

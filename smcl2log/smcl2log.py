@@ -15,6 +15,7 @@ import re
 import os
 import shutil
 import logging
+from io import StringIO
 from typing import Union
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -131,6 +132,29 @@ def AtomicOutputFile(path: Union[Path, str], **kwargs):
         LOG.info("Wrote `%s`", path.absolute())
 
 
+def split_parts(s):
+    out = []
+    count = 0
+    sub = ""
+    for part in re.split(r"([{}])", s):
+        if part == "{":
+            count += 1
+            sub += part
+        elif part == "}":
+            sub += part
+            count -= 1
+            if count == 0:
+                out.append(sub)
+                sub = ""
+        else:
+            if count == 0:
+                out.append(part)
+            else:
+                sub += part
+
+    return out
+
+
 
 def smcl2log(out, smcl_path):
     LOG.info(smcl_path.name)
@@ -138,6 +162,135 @@ def smcl2log(out, smcl_path):
     if not isinstance(smcl_path, Path):
         smcl_path = Path(smcl_path)
 
-    smcl_text = smcl_path.read_text()
+    def parse(out, chunk, cmd=0, mode=None, line=None, col=0):
+        for part in split_parts(chunk):
+            if part.startswith("{"):
+                cmd_parts = re.split(r"\s+", part[1:-1])
+
+                if cmd_parts[0] == "smcl":
+                    mode = "init"
+                    assert len(cmd_parts) == 1
+                    continue
+
+                if cmd_parts[0] == ".-":
+                    mode = None
+                    assert len(cmd_parts) == 1
+                    continue
+
+                if cmd_parts[0] in ("txt", "res", ):
+                    assert len(cmd_parts) == 1
+                    mode = cmd_parts[0]
+                    continue
+
+                if cmd_parts[0] in ("bf", "sf", "err", "p_end"):
+                    assert len(cmd_parts) == 1
+                    continue
+
+                if cmd_parts[0] in ("p"):
+                    assert len(cmd_parts) == 3
+                    continue
+
+                if cmd_parts[0] in ("search"):
+                    continue
+
+                if cmd_parts[0] == "ul":
+                    assert cmd_parts == ["ul", "off"]
+                    continue
+
+                if re.match(r"(res|bf|text)", cmd_parts[0]):
+                    text = part[1:-1].split(":", 1)[1]
+                    out.write(text)
+                    col += len(text)
+                    continue
+
+                if cmd_parts[0] == "ralign":
+                    count, code = re.match(r"\{ralign (\d+):(.*)\}", part).groups()
+                    count = int(count)
+                    out_ = StringIO()
+                    (cmd_, mode_, line_, col_, ) = parse(out_, code)
+                    value = ("%%%ds" % count) % out_.getvalue()
+                    out.write(value)
+                    col += len(value)
+                    continue
+
+                if cmd_parts[0] in ("help"):
+                    null, code = re.match(r"\{help (.*):(.*)\}", part).groups()
+                    out_ = StringIO()
+                    (cmd_, mode_, line_, col_, ) = parse(out_, code)
+                    value = out_.getvalue()
+                    out.write(value)
+                    col += len(value)
+                    continue
+
+                if cmd_parts[0] == "col":
+                    assert len(cmd_parts) == 2
+                    target = int(cmd_parts[1])
+                    lack = max(0, target - col)
+                    out.write(" " * lack)
+                    col += lack
+                    continue
+
+                if cmd_parts[0] == "space":
+                    assert len(cmd_parts) == 2
+                    count = int(cmd_parts[1])
+                    out.write(" " * count)
+                    col += count
+                    continue
+
+                if cmd_parts[0] == "hline":
+                    assert len(cmd_parts) == 2
+                    count = int(cmd_parts[1])
+                    out.write("-" * count)
+                    # out.write(repr(count))
+                    col += count
+                    continue
+
+                if cmd_parts[0] == "c":
+                    assert len(cmd_parts) == 2
+                    lookup = {
+                        "|": "|",
+                        "+": "+",
+                        "TT": "+",
+                        "BT": "+",
+                    }
+                    value = lookup[cmd_parts[1]]
+                    out.write(value)
+                    col += len(value)
+                    continue
+
+                if cmd_parts[0] == "com":
+                    assert len(cmd_parts) == 1
+                    if mode == "init":
+                        continue
+                    mode = cmd_parts[0]
+                    cmd += 1
+                    msg = "%d " % cmd
+                    out.write(msg)
+                    col += len(msg)
+                    continue
+
+                LOG.warning("Ignoring unrecognised token: %s", repr(part))
+
+            else:
+                if mode == "init":
+                    continue
+
+                msg = part
+                if "\n" in part:
+                    col = len(part.split("\n")[-1])
+                else:
+                    col += len(part)
+                out.write(part)
+
+        return (cmd, mode, line, col)
+
+
+    cmd = 0
+    mode = None
+    line = None
+    col = 0
 
     out.write("")
+    with smcl_path.open() as fp:
+        for i, line in enumerate(fp.readlines()):
+            (cmd, mode, line, col) = parse(out, line, cmd, mode, line, col)
