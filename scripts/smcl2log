@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import os
+import sys
+import shutil
+import logging
+import argparse
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+
+from smcl2log.smcl2log import (
+    AtomicOutputFile,
+    init_logs,
+    smcl2log,
+)
+
+
+
+LOG = logging.getLogger("smcl2log")
+
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="""\
+Convert a Stata Markup and Control Language (SMCL) file to a plain text log.""")
+
+    parser.add_argument(
+        "smcl",
+        metavar="SMCL",
+        type=Path,
+        help="Path to SMCL file.")
+
+    parser.add_argument(
+        "log",
+        metavar="LOG",
+        nargs="?",
+        type=Path,
+        help="Path to LOG file.")
+
+    args = parser.parse_args()
+    init_logs(LOG)
+
+
+    def wrapper(out):
+        smcl2log(out, args.smcl)
+
+
+    if args.log:
+        with AtomicOutputFile(args.log, encoding="utf=8") as out:
+            wrapper(out)
+    else:
+        wrapper(sys.stdout)
+
+
+
+if __name__ == "__main__":
+    main()
