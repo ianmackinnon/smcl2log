@@ -39,6 +39,11 @@ def main():
 Convert a Stata Markup and Control Language (SMCL) file to a plain text log.""")
 
     parser.add_argument(
+        "-n", "--number",
+        type=int,
+        help="Extract only the specified command number, eg. '5'.")
+
+    parser.add_argument(
         "smcl",
         metavar="SMCL",
         type=Path,
@@ -54,9 +59,8 @@ Convert a Stata Markup and Control Language (SMCL) file to a plain text log.""")
     args = parser.parse_args()
     init_logs(LOG)
 
-
     def wrapper(out):
-        smcl2log(out, args.smcl)
+        smcl2log(out, args.smcl, number=args.number)
 
 
     if args.log:

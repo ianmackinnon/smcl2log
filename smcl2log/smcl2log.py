@@ -156,13 +156,18 @@ def split_parts(s):
 
 
 
-def smcl2log(out, smcl_path):
+def smcl2log(out, smcl_path, number: Union[int, None]):
     LOG.info(smcl_path.name)
 
     if not isinstance(smcl_path, Path):
         smcl_path = Path(smcl_path)
 
     def parse(out, chunk, cmd=0, mode=None, line=None, col=0):
+        def write(s):
+            if number is not None and cmd != number:
+                return
+            out.write(s)
+
         for part in split_parts(chunk):
             if part.startswith("{"):
                 cmd_parts = re.split(r"\s+", part[1:-1])
@@ -199,7 +204,7 @@ def smcl2log(out, smcl_path):
 
                 if re.match(r"(res|bf|text)", cmd_parts[0]):
                     text = part[1:-1].split(":", 1)[1]
-                    out.write(text)
+                    write(text)
                     col += len(text)
                     continue
 
@@ -207,18 +212,18 @@ def smcl2log(out, smcl_path):
                     count, code = re.match(r"\{ralign (\d+):(.*)\}", part).groups()
                     count = int(count)
                     out_ = StringIO()
-                    (cmd_, mode_, line_, col_, ) = parse(out_, code)
+                    (cmd_, mode_, line_, col_, ) = parse(out_, code, cmd=cmd)
                     value = ("%%%ds" % count) % out_.getvalue()
-                    out.write(value)
+                    write(value)
                     col += len(value)
                     continue
 
                 if cmd_parts[0] in ("help"):
                     null, code = re.match(r"\{help (.*):(.*)\}", part).groups()
                     out_ = StringIO()
-                    (cmd_, mode_, line_, col_, ) = parse(out_, code)
+                    (cmd_, mode_, line_, col_, ) = parse(out_, code, cmd=cmd)
                     value = out_.getvalue()
-                    out.write(value)
+                    write(value)
                     col += len(value)
                     continue
 
@@ -226,22 +231,22 @@ def smcl2log(out, smcl_path):
                     assert len(cmd_parts) == 2
                     target = int(cmd_parts[1])
                     lack = max(0, target - col)
-                    out.write(" " * lack)
+                    write(" " * lack)
                     col += lack
                     continue
 
                 if cmd_parts[0] == "space":
                     assert len(cmd_parts) == 2
                     count = int(cmd_parts[1])
-                    out.write(" " * count)
+                    write(" " * count)
                     col += count
                     continue
 
                 if cmd_parts[0] == "hline":
                     assert len(cmd_parts) == 2
                     count = int(cmd_parts[1])
-                    out.write("-" * count)
-                    # out.write(repr(count))
+                    write("-" * count)
+                    # write(repr(count))
                     col += count
                     continue
 
@@ -254,7 +259,7 @@ def smcl2log(out, smcl_path):
                         "BT": "+",
                     }
                     value = lookup[cmd_parts[1]]
-                    out.write(value)
+                    write(value)
                     col += len(value)
                     continue
 
@@ -263,9 +268,11 @@ def smcl2log(out, smcl_path):
                     if mode == "init":
                         continue
                     mode = cmd_parts[0]
+                    if number is not None and cmd > number:
+                        break
                     cmd += 1
                     msg = "%d " % cmd
-                    out.write(msg)
+                    write(msg)
                     col += len(msg)
                     continue
 
@@ -280,7 +287,11 @@ def smcl2log(out, smcl_path):
                     col = len(part.split("\n")[-1])
                 else:
                     col += len(part)
-                out.write(part)
+
+                write(part)
+
+            if number is not None and cmd > number:
+                break
 
         return (cmd, mode, line, col)
 
@@ -294,3 +305,5 @@ def smcl2log(out, smcl_path):
     with smcl_path.open() as fp:
         for i, line in enumerate(fp.readlines()):
             (cmd, mode, line, col) = parse(out, line, cmd, mode, line, col)
+            if number is not None and cmd > number:
+                break
